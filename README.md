@@ -4,7 +4,7 @@ AI Data Pipeline Copilot is a portfolio project that will eventually become an a
 
 ## Current Status
 
-Phase 2 is complete as a sample data platform. The project now includes the Phase 1 FastAPI foundation plus PostgreSQL initialization scripts for a small realistic data engineering environment.
+Phase 3 is complete. The project now includes the Phase 1 FastAPI foundation, the Phase 2 PostgreSQL sample data platform, and deterministic Metadata Intelligence Tools that inspect existing database metadata without using an LLM.
 
 Implemented now:
 
@@ -16,13 +16,30 @@ Implemented now:
 - Sample PostgreSQL schemas and tables.
 - Deterministic seed data for raw source tables.
 - Metadata tables describing the sample platform and one planned pipeline definition.
+- Read-only Python metadata tools for table discovery, schema inspection, metadata lookup, samples, row counts, and pipeline metadata.
+- Thin read-only FastAPI metadata endpoints.
 
 No AI-agent functionality is implemented yet.
 
+## Metadata Intelligence Tools
+
+The metadata tool layer lives in `agent/tools/metadata_tools.py`. These functions are deterministic, read-only, and designed to be called later by a future AI agent:
+
+- `list_tables()` returns business tables from `raw` and `curated`.
+- `inspect_schema(schema_name, table_name)` returns physical column names, data types, nullability, primary-key flags, and ordinal positions.
+- `get_table_metadata(schema_name, table_name)` reads table descriptions from `metadata.table_metadata`.
+- `get_column_metadata(schema_name, table_name)` reads column descriptions from `metadata.column_metadata`.
+- `get_sample_records(schema_name, table_name, limit=5)` returns validated sample records with a maximum limit of 20.
+- `get_row_count(schema_name, table_name)` returns a table row count.
+- `get_pipeline_metadata(pipeline_name)` reads pipeline definitions from `metadata.pipeline_metadata`.
+
+The tools do not accept arbitrary SQL and do not perform writes.
+
 ## Planned Future Capabilities
 
+- AI agent orchestration.
+- OpenAI API integration.
 - Requirement understanding for data pipeline requests.
-- Metadata inspection.
 - Pipeline planning.
 - SQL transformation generation.
 - Data-quality rule generation.
@@ -46,9 +63,10 @@ No AI-agent functionality is implemented yet.
 app/             FastAPI application entry points and routes
 config/          Environment-based settings
 database/        SQLAlchemy engine, health checks, and SQL initialization files
-database/sql/    Ordered SQL scripts for Phase 2 schemas, tables, seed data, and metadata
+database/sql/    Ordered SQL scripts for schemas, tables, seed data, and metadata
 scripts/         Database initialization and verification scripts
-agent/           Placeholder for future agent modules
+agent/           Deterministic metadata tools and future agent modules
+agent/tools/     Read-only metadata intelligence tools
 pipeline/        Placeholder for future pipeline modules
 quality/         Placeholder for future data-quality modules
 tests/           Unit tests
@@ -96,7 +114,7 @@ docker compose ps
 
 ## Database Initialization
 
-Initialize the Phase 2 sample data platform:
+Initialize the sample data platform:
 
 ```powershell
 python scripts/init_database.py
@@ -130,7 +148,7 @@ Metadata tables:
 - `metadata.pipeline_metadata`
 - `metadata.pipeline_runs`
 
-Seed data includes 10 customers and 35 orders with multiple countries, currencies, and order statuses. `curated.customer_revenue` is intentionally not populated by a pipeline in Phase 2.
+Seed data includes 10 customers and 35 orders with multiple countries, currencies, and order statuses. `curated.customer_revenue` is intentionally not populated by a pipeline in Phase 3.
 
 ## FastAPI Startup
 
@@ -144,8 +162,15 @@ Useful endpoints:
 
 - `GET /`
 - `GET /health`
+- `GET /metadata/tables`
+- `GET /metadata/schema/{schema_name}/{table_name}`
+- `GET /metadata/table/{schema_name}/{table_name}`
+- `GET /metadata/columns/{schema_name}/{table_name}`
+- `GET /metadata/sample/{schema_name}/{table_name}?limit=5`
+- `GET /metadata/count/{schema_name}/{table_name}`
+- `GET /metadata/pipeline/{pipeline_name}`
 
-If PostgreSQL is unavailable, `/health` returns a degraded status instead of crashing.
+If PostgreSQL is unavailable, `/health` returns a degraded status instead of crashing. Metadata endpoints return safe HTTP errors for unavailable databases, invalid identifiers, invalid sample limits, and unknown resources.
 
 ## Tests
 
@@ -164,7 +189,7 @@ python -m compileall app config database agent pipeline quality scripts tests
 ## Current Limitations
 
 - No OpenAI API integration.
-- No agents, prompts, or tool calling.
+- No AI agents, prompts, or tool calling.
 - No natural-language parsing.
 - No generated SQL.
 - No generated data-quality rules.

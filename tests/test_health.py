@@ -21,7 +21,7 @@ def test_root_endpoint_returns_application_information() -> None:
     payload = response.json()
     assert payload["application"] == "AI Data Pipeline Copilot"
     assert payload["status"] == "running"
-    assert payload["phase"] == "Phase 1 - Project Foundation"
+    assert payload["phase"] == "Phase 3 - Metadata Intelligence Tools"
 
 
 def test_health_endpoint_structure(monkeypatch) -> None:

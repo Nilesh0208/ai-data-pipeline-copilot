@@ -1,4 +1,4 @@
-"""Application entry point for the Phase 1 FastAPI service."""
+"""Application entry point for the FastAPI service."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import logging
 from fastapi import FastAPI
 
 from app.health import router as health_router
+from app.metadata import router as metadata_router
 from config.settings import get_settings
 
 
@@ -25,6 +26,7 @@ app = FastAPI(
 )
 
 app.include_router(health_router)
+app.include_router(metadata_router)
 
 
 @app.get("/")
@@ -35,5 +37,5 @@ def read_root() -> dict[str, str]:
         "application": settings.app_name,
         "environment": settings.app_env,
         "status": "running",
-        "phase": "Phase 1 - Project Foundation",
+        "phase": "Phase 3 - Metadata Intelligence Tools",
     }
