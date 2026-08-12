@@ -1,68 +1,50 @@
 # Architecture
 
-This document describes the current Phase 4 application. The implemented system includes FastAPI, read-only Metadata Intelligence Tools, SQLAlchemy, the PostgreSQL sample data platform, and a strict Pipeline Requirement Model for validated structured pipeline specifications. AI agents, prompt flows, OpenAI API integration, natural-language conversion, SQL generation, pipeline execution, scheduling execution, and data-quality rule generation are future work and are not implemented yet.
+This document describes the current Phase 5 application. The implemented system includes FastAPI, read-only Metadata Intelligence Tools, SQLAlchemy, the PostgreSQL sample data platform, a strict Pipeline Requirement Model, and an AI Pipeline Agent backed by the Google Gemini API.
 
 ## Current Runtime Flow
 
 ```text
-User/API
+User
    |
    v
 FastAPI
+   |
+   |-- AI Pipeline Agent
+   |      |
+   |      v
+   |   Gemini API
+   |      ^
+   |      |
+   |   Function Tool Registry / Dispatcher
+   |      |
+   |      v
+   |   Metadata Intelligence Tools
+   |      |
+   |      v
+   |   SQLAlchemy
+   |      |
+   |      v
+   |   PostgreSQL
    |
    |-- Pipeline Requirement API
    |      |
    |      v
    |   Pipeline Requirement Models
-   |      |
-   |      v
-   |   Validation
    |
    `-- Metadata API
           |
           v
        Metadata Intelligence Tools
-          |
-          v
-       SQLAlchemy
-          |
-          v
-       PostgreSQL
-          |-- raw
-          |   |-- customers
-          |   `-- orders
-          |
-          |-- curated
-          |   `-- customer_revenue
-          |
-          `-- metadata
-              |-- table_metadata
-              |-- column_metadata
-              |-- pipeline_metadata
-              `-- pipeline_runs
 ```
 
-The Pipeline Requirement API validates JSON payloads only. It does not generate SQL, execute pipelines, call an LLM, or parse natural language.
-
-## Future Agent Flow
+Final agent output:
 
 ```text
-Natural-language request
-   |
-   v
-AI Agent (NOT YET IMPLEMENTED)
-   |
-   v
 PipelineRequirement
-   |
-   v
-Pipeline Requirement Models
-   |
-   v
-Validation
 ```
 
-The future AI agent is NOT YET IMPLEMENTED. The Phase 4 requirement model defines the structured contract that future agent output must satisfy.
+The agent does not generate SQL, execute SQL, write data, execute pipelines, or generate data-quality rules.
 
 ## Components
 
@@ -72,7 +54,7 @@ Users and clients interact with the application through HTTP endpoints exposed b
 
 ### FastAPI
 
-The application currently exposes:
+The application exposes:
 
 - `GET /` for basic application information.
 - `GET /health` for application and database health.
@@ -85,94 +67,92 @@ The application currently exposes:
 - `GET /metadata/pipeline/{pipeline_name}` for pipeline metadata.
 - `POST /requirements/validate` for validating and normalizing structured pipeline requirements.
 - `GET /requirements/example` for the deterministic `customer_revenue_daily` requirement example.
+- `POST /agent/requirements` for natural-language requirement generation.
 
-The API handles database connection failures gracefully and returns safe error responses instead of exposing raw database exceptions. Requirement validation errors are returned through FastAPI's standard validation response format.
+### AI Pipeline Agent
 
-### Pipeline Requirement API
+The agent layer lives in `agent/`:
 
-The requirement API is a thin HTTP layer in `app/requirements.py`. It delegates validation to Pydantic models in `pipeline/requirements.py` and returns normalized model dumps. It has no database dependency and does not require PostgreSQL for validation tests.
+- `client.py` creates a Gemini client from settings only when AI functionality is invoked.
+- `prompts.py` contains maintainable agent instructions.
+- `tool_registry.py` defines the exact read-only metadata tools exposed to Gemini and dispatches calls deterministically.
+- `pipeline_agent.py` implements the Gemini function-calling loop and validates final structured output.
+
+The agent sends user requirements and function declarations to Gemini. When the model requests metadata, the local dispatcher validates the arguments, executes the registered read-only metadata tool, serializes the result, and returns it as a Gemini function response. The loop supports multiple tool calls and enforces a maximum iteration limit.
+
+The final response is requested as structured JSON using the `PipelineRequirement` schema and is validated with the existing Pydantic model before the API returns it.
+
+### Function Tool Registry / Dispatcher
+
+The registry exposes only these tools:
+
+- `list_tables`
+- `inspect_schema`
+- `get_table_metadata`
+- `get_column_metadata`
+- `get_sample_records`
+- `get_row_count`
+- `get_pipeline_metadata`
+
+It rejects unknown tool names, forbids extra tool arguments through Pydantic validation, returns structured tool errors, and does not expose arbitrary SQL or write operations.
 
 ### Pipeline Requirement Models
 
-The requirement models define a strict, serializable contract for future AI-produced pipeline specifications:
+The requirement models define the strict structured contract for agent output:
 
-- `TableReference` validates safe schema and table identifiers.
-- `PipelineSource` defines source tables, aliases, and descriptions.
-- `PipelineTarget` defines target tables and controlled write modes.
-- `TransformationRule` captures declarative transformation intent with controlled rule types.
-- `LoadStrategy` validates full and incremental load configuration.
-- `ScheduleDefinition` validates configuration-only schedule settings.
-- `PipelineRequirement` ties sources, target, transformations, load strategy, schedule, owner, purpose, and tags together.
+- `TableReference`
+- `PipelineSource`
+- `PipelineTarget`
+- `TransformationRule`
+- `LoadStrategy`
+- `ScheduleDefinition`
+- `PipelineRequirement`
 
-The models reject unsafe identifiers, duplicate source tables, duplicate aliases, invalid enum values, unsafe SQL-like expression strings, inconsistent load settings, and invalid schedule settings. They support serialization through Pydantic `model_dump()` and `model_dump_json()`.
-
-### Metadata API
-
-The metadata API is a thin HTTP layer in `app/metadata.py`. It delegates business and database behavior to deterministic metadata tools and maps tool errors to HTTP responses:
-
-- Invalid identifiers and invalid sample limits return `400`.
-- Unknown schemas, tables, or metadata resources return `404`.
-- Database failures return `503`.
+They reject unsafe identifiers, duplicate source tables, duplicate aliases, invalid enum values, unsafe SQL-like expression strings, inconsistent load settings, and invalid schedule settings.
 
 ### Metadata Intelligence Tools
 
-The metadata tools live in `agent/tools/metadata_tools.py`. They provide read-only functions for:
-
-- Listing `raw` and `curated` business tables.
-- Inspecting physical table schemas through SQLAlchemy inspection.
-- Reading table and column descriptions from the `metadata` schema.
-- Returning bounded sample records with safe reflected identifiers.
-- Returning table row counts.
-- Reading pipeline definitions without executing pipelines.
+The metadata tools live in `agent/tools/metadata_tools.py`. They provide read-only functions for listing business tables, inspecting schemas, reading table and column descriptions, returning bounded samples, returning row counts, and reading configured pipeline metadata.
 
 The tools do not accept arbitrary SQL strings and do not implement write operations.
 
 ### Configuration
 
-Runtime configuration is loaded from environment variables through `pydantic-settings`. Defaults are suitable for local development, and `.env.example` documents the expected variables.
+Runtime configuration is loaded from environment variables through `pydantic-settings`. `.env.example` documents PostgreSQL settings and Gemini settings:
 
-Secrets are not committed. The repository includes only an example password placeholder.
+- `GEMINI_API_KEY` is required only when invoking AI functionality.
+- `GEMINI_MODEL` is optional and defaults to `gemini-3.6-flash`.
+
+API keys are not logged and are not hardcoded.
 
 ### Database Layer
 
-The database layer uses SQLAlchemy 2.x with the `psycopg` driver. It provides a reusable engine and a lightweight `SELECT 1` health check. PostgreSQL connection attempts use a short driver timeout so database health checks fail fast when PostgreSQL is unavailable.
-
-The same database connection configuration is used by initialization scripts, verification scripts, and metadata tools.
+The database layer uses SQLAlchemy 2.x with the `psycopg` driver. It provides a reusable engine and a lightweight health check. PostgreSQL connection attempts use a short driver timeout so database health checks fail fast when PostgreSQL is unavailable.
 
 ### PostgreSQL
 
-Docker Compose defines a single PostgreSQL service with:
+Docker Compose defines PostgreSQL with non-public business schemas:
 
-- Host port `5434`.
-- A persistent named volume.
-- A healthcheck.
+- `raw.customers`
+- `raw.orders`
+- `curated.customer_revenue`
 
-The sample data platform creates three non-public schemas:
+Metadata tables:
 
-- `raw` for source-like sample tables.
-- `curated` for future target tables.
-- `metadata` for table, column, and planned pipeline descriptions.
+- `metadata.table_metadata`
+- `metadata.column_metadata`
+- `metadata.pipeline_metadata`
+- `metadata.pipeline_runs`
 
-#### Raw Schema
+`metadata.pipeline_metadata` contains one planned pipeline definition named `customer_revenue_daily`.
 
-`raw.customers` contains deterministic sample customer records.
+## Future Modules
 
-`raw.orders` contains deterministic sample order records with a foreign key to `raw.customers`.
+Future phases may add:
 
-#### Curated Schema
+- SQL Generation
+- Data Quality Rule Generation
+- Pipeline Planning
+- Final guardrails
 
-`curated.customer_revenue` is a planned target table for future customer revenue aggregation. It exists in Phase 4 but is not populated by pipeline execution.
-
-#### Metadata Schema
-
-`metadata.table_metadata` describes the sample business tables.
-
-`metadata.column_metadata` describes important columns on those tables.
-
-`metadata.pipeline_metadata` contains one planned pipeline definition named `customer_revenue_daily` with sources `raw.customers` and `raw.orders`, target `curated.customer_revenue`, incremental load type, and daily schedule.
-
-`metadata.pipeline_runs` exists for future execution history and remains empty in Phase 4.
-
-## Future Agent Layer
-
-The future agent layer is not implemented in Phase 4. Later phases may add AI orchestration that converts natural-language requests into `PipelineRequirement` and calls deterministic metadata tools, but the current system intentionally contains no prompts, model calls, natural-language parsing, SQL generation, data-quality generation, or pipeline execution.
+These are intentionally not implemented in Phase 5.

@@ -1,1 +1,1 @@
-"""Placeholder package for future agent capabilities."""
+"""AI agent package for metadata-aware pipeline requirement generation."""

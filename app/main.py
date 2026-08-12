@@ -6,6 +6,8 @@ import logging
 
 from fastapi import FastAPI
 
+from app.agent import router as agent_router
+
 from app.health import router as health_router
 from app.metadata import router as metadata_router
 from app.requirements import router as requirements_router
@@ -29,6 +31,7 @@ app = FastAPI(
 app.include_router(health_router)
 app.include_router(metadata_router)
 app.include_router(requirements_router)
+app.include_router(agent_router)
 
 
 @app.get("/")
@@ -39,7 +42,7 @@ def read_root() -> dict[str, str]:
         "application": settings.app_name,
         "environment": settings.app_env,
         "status": "running",
-        "phase": "Phase 4 - Pipeline Requirement Model",
+        "phase": "Phase 5 - AI Agent Core",
     }
 
 

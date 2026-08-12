@@ -1,10 +1,10 @@
 # AI Data Pipeline Copilot
 
-AI Data Pipeline Copilot is a portfolio project that will eventually become an agentic AI system for understanding data pipeline requirements, inspecting metadata, generating pipeline plans, SQL transformations, and data-quality rules.
+AI Data Pipeline Copilot is a portfolio project for an agentic AI system that understands data pipeline requirements, inspects metadata, and produces validated pipeline specifications.
 
 ## Current Status
 
-Phase 4 is complete. The project now includes the Phase 1 FastAPI foundation, the Phase 2 PostgreSQL sample data platform, deterministic Metadata Intelligence Tools, and a strict Pipeline Requirement Model that validates structured pipeline specifications without using an LLM.
+Phase 5 is complete. The project now includes the FastAPI/PostgreSQL foundation, deterministic Metadata Intelligence Tools, a strict Pipeline Requirement Model, and a Google Gemini based AI agent core that converts natural-language requests into validated `PipelineRequirement` objects.
 
 Implemented now:
 
@@ -13,26 +13,62 @@ Implemented now:
 - Reusable SQLAlchemy 2.x database engine with psycopg.
 - PostgreSQL Docker Compose setup.
 - Database health checks.
-- Sample PostgreSQL schemas and tables.
-- Deterministic seed data for raw source tables.
-- Metadata tables describing the sample platform and one planned pipeline definition.
+- Sample PostgreSQL schemas and deterministic seed data.
+- Metadata tables describing sample business tables and one planned pipeline.
 - Read-only Python metadata tools for table discovery, schema inspection, metadata lookup, samples, row counts, and pipeline metadata.
 - Thin read-only FastAPI metadata endpoints.
 - Strict Pydantic models for structured pipeline requirements.
-- Deterministic customer revenue pipeline requirement example.
-- FastAPI requirement validation endpoints.
+- Requirement validation endpoints.
+- Google Gemini API integration.
+- Google Gen AI Python SDK integration.
+- Gemini function-calling agent loop.
+- Gemini structured JSON output validated into `PipelineRequirement`.
+- `POST /agent/requirements` natural-language requirement endpoint.
 
-No AI-agent functionality is implemented yet. Natural-language conversion into the structured requirement model will be introduced later.
+## AI Agent Core
+
+The agent lives in `agent/` and uses the official Google Gen AI Python SDK directly. It does not use LangChain, CrewAI, AutoGen, or another agent framework.
+
+Current workflow:
+
+```text
+Natural-language request
+   |
+   v
+Gemini AI Pipeline Agent
+   |
+   v
+Gemini function calling
+   |
+   v
+Metadata Intelligence Tools
+   |
+   v
+PostgreSQL
+   |
+   v
+Validated PipelineRequirement
+```
+
+The agent can call only registered read-only metadata tools. Tool calls are dispatched through a deterministic registry that validates arguments, rejects unknown tool names, serializes results safely, and records a lightweight trace of tool name, sanitized arguments, and success/failure. The final model output is requested as Gemini structured JSON using the `PipelineRequirement` schema and is validated again with the existing Pydantic model.
+
+Current AI limitations:
+
+- No SQL generation yet.
+- No SQL execution.
+- No pipeline execution.
+- No data-quality rule generation yet.
+- No remediation, orchestration, Airflow, or scheduling execution.
 
 ## Metadata Intelligence Tools
 
-The metadata tool layer lives in `agent/tools/metadata_tools.py`. These functions are deterministic, read-only, and designed to be called later by a future AI agent:
+The metadata tool layer lives in `agent/tools/metadata_tools.py`. These functions are deterministic, read-only, and available to the Gemini agent through `agent/tool_registry.py`:
 
 - `list_tables()` returns business tables from `raw` and `curated`.
 - `inspect_schema(schema_name, table_name)` returns physical column names, data types, nullability, primary-key flags, and ordinal positions.
 - `get_table_metadata(schema_name, table_name)` reads table descriptions from `metadata.table_metadata`.
 - `get_column_metadata(schema_name, table_name)` reads column descriptions from `metadata.column_metadata`.
-- `get_sample_records(schema_name, table_name, limit=5)` returns validated sample records with a maximum limit of 20.
+- `get_sample_records(schema_name, table_name, limit=5)` returns validated sample records. Direct tool usage supports up to 20; agent usage is capped at 10.
 - `get_row_count(schema_name, table_name)` returns a table row count.
 - `get_pipeline_metadata(pipeline_name)` reads pipeline definitions from `metadata.pipeline_metadata`.
 
@@ -40,7 +76,7 @@ The tools do not accept arbitrary SQL and do not perform writes.
 
 ## Pipeline Requirement Model
 
-The pipeline requirement model lives in `pipeline/requirements.py`. It defines the structured contract that a future AI agent will produce after natural-language conversion is implemented later.
+The pipeline requirement model lives in `pipeline/requirements.py`. It defines the structured contract produced by the AI agent.
 
 Implemented models include:
 
@@ -52,19 +88,7 @@ Implemented models include:
 - `ScheduleDefinition` for configuration-only schedules: `manual`, `hourly`, `daily`, and `weekly`.
 - `PipelineRequirement` as the top-level validated pipeline specification.
 
-The model rejects unsafe identifiers, duplicate source tables, invalid enum values, inconsistent incremental load settings, unsafe SQL-like expression strings, and invalid schedule configuration. It supports clean serialization through Pydantic `model_dump()` and `model_dump_json()`.
-
-A deterministic `customer_revenue_daily` example is available from `pipeline/examples.py` and through the API. It describes sources `raw.customers` and `raw.orders`, target `curated.customer_revenue`, merge write mode, incremental loading, daily scheduling, and structured transformation rules. It does not generate SQL or execute a pipeline.
-
-## Planned Future Capabilities
-
-- AI agent orchestration.
-- OpenAI API integration.
-- Natural-language conversion into `PipelineRequirement`.
-- Pipeline planning.
-- SQL transformation generation.
-- Data-quality rule generation.
-- Pipeline execution support.
+The model rejects unsafe identifiers, duplicate source tables, invalid enum values, inconsistent incremental load settings, unsafe SQL-like expression strings, and invalid schedule configuration.
 
 ## Technology Stack
 
@@ -74,6 +98,12 @@ A deterministic `customer_revenue_daily` example is available from `pipeline/exa
 - SQLAlchemy 2.x
 - Pydantic and pydantic-settings
 - psycopg
+- Google Gemini API
+- Google Gen AI Python SDK
+- Gemini function calling
+- Gemini structured outputs
+- Agent orchestration
+- Pydantic validated agent output
 - pytest
 - Docker Compose
 - Python logging
@@ -86,7 +116,7 @@ config/          Environment-based settings
 database/        SQLAlchemy engine, health checks, and SQL initialization files
 database/sql/    Ordered SQL scripts for schemas, tables, seed data, and metadata
 scripts/         Database initialization and verification scripts
-agent/           Deterministic metadata tools and future agent modules
+agent/           AI agent core, Gemini client, prompts, registry, and tools
 agent/tools/     Read-only metadata intelligence tools
 pipeline/        Pipeline requirement models and deterministic examples
 quality/         Placeholder for future data-quality modules
@@ -115,7 +145,7 @@ Create local configuration from the example when needed:
 Copy-Item .env.example .env
 ```
 
-Update `POSTGRES_PASSWORD` in `.env` for local use. Do not commit real secrets.
+Update `POSTGRES_PASSWORD` for local use. Add `GEMINI_API_KEY` only when you want to run the live AI endpoint. Do not commit real secrets. `GEMINI_MODEL` is optional and defaults to `gemini-3.6-flash`.
 
 ## PostgreSQL Startup
 
@@ -127,49 +157,17 @@ docker compose up -d postgres
 
 PostgreSQL is exposed on host port `5434`.
 
-Check service status:
-
-```powershell
-docker compose ps
-```
-
-## Database Initialization
-
 Initialize the sample data platform:
 
 ```powershell
 python scripts/init_database.py
 ```
 
-The initialization command uses the existing application settings and SQLAlchemy engine. It executes SQL files from `database/sql/` in filename order and is safe to rerun.
-
 Verify expected schemas, tables, and seed counts:
 
 ```powershell
 python scripts/verify_database.py
 ```
-
-## Sample Data Platform
-
-Business tables are not created in the `public` schema.
-
-Raw source tables:
-
-- `raw.customers`
-- `raw.orders`
-
-Curated target table:
-
-- `curated.customer_revenue`
-
-Metadata tables:
-
-- `metadata.table_metadata`
-- `metadata.column_metadata`
-- `metadata.pipeline_metadata`
-- `metadata.pipeline_runs`
-
-Seed data includes 10 customers and 35 orders with multiple countries, currencies, and order statuses. `curated.customer_revenue` is intentionally not populated by a pipeline in Phase 3.
 
 ## FastAPI Startup
 
@@ -192,8 +190,15 @@ Useful endpoints:
 - `GET /metadata/pipeline/{pipeline_name}`
 - `POST /requirements/validate`
 - `GET /requirements/example`
+- `POST /agent/requirements`
 
-If PostgreSQL is unavailable, `/health` returns a degraded status instead of crashing. Metadata endpoints return safe HTTP errors for unavailable databases, invalid identifiers, invalid sample limits, and unknown resources. Requirement endpoints validate structured JSON through Pydantic and return clear FastAPI validation errors for invalid payloads.
+Example agent request after setting `GEMINI_API_KEY`:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/agent/requirements -ContentType 'application/json' -Body '{"request":"Create a daily pipeline that joins customers and completed orders and calculates total revenue per customer."}'
+```
+
+If `GEMINI_API_KEY` is missing, the agent endpoint returns a controlled error response instead of crashing.
 
 ## Tests
 
@@ -209,14 +214,15 @@ Run Python syntax validation:
 python -m compileall app config database agent pipeline quality scripts tests
 ```
 
+The unit tests mock the Gemini client and do not make billable Gemini API calls.
+
 ## Current Limitations
 
-- No OpenAI API integration.
-- No AI agents, prompts, or tool calling.
-- No natural-language parsing or conversion into `PipelineRequirement`.
 - No generated SQL.
+- No SQL execution.
+- No data writes.
 - No generated data-quality rules.
-- No pipeline execution or scheduling.
+- No pipeline execution or scheduling execution.
+- No Airflow or orchestration engine.
 - No CI/CD.
 - No frontend.
-
