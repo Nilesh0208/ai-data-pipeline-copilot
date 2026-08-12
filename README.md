@@ -4,7 +4,7 @@ AI Data Pipeline Copilot is a portfolio project that will eventually become an a
 
 ## Current Status
 
-Phase 3 is complete. The project now includes the Phase 1 FastAPI foundation, the Phase 2 PostgreSQL sample data platform, and deterministic Metadata Intelligence Tools that inspect existing database metadata without using an LLM.
+Phase 4 is complete. The project now includes the Phase 1 FastAPI foundation, the Phase 2 PostgreSQL sample data platform, deterministic Metadata Intelligence Tools, and a strict Pipeline Requirement Model that validates structured pipeline specifications without using an LLM.
 
 Implemented now:
 
@@ -18,8 +18,11 @@ Implemented now:
 - Metadata tables describing the sample platform and one planned pipeline definition.
 - Read-only Python metadata tools for table discovery, schema inspection, metadata lookup, samples, row counts, and pipeline metadata.
 - Thin read-only FastAPI metadata endpoints.
+- Strict Pydantic models for structured pipeline requirements.
+- Deterministic customer revenue pipeline requirement example.
+- FastAPI requirement validation endpoints.
 
-No AI-agent functionality is implemented yet.
+No AI-agent functionality is implemented yet. Natural-language conversion into the structured requirement model will be introduced later.
 
 ## Metadata Intelligence Tools
 
@@ -35,11 +38,29 @@ The metadata tool layer lives in `agent/tools/metadata_tools.py`. These function
 
 The tools do not accept arbitrary SQL and do not perform writes.
 
+## Pipeline Requirement Model
+
+The pipeline requirement model lives in `pipeline/requirements.py`. It defines the structured contract that a future AI agent will produce after natural-language conversion is implemented later.
+
+Implemented models include:
+
+- `TableReference` for safe schema and table identifiers.
+- `PipelineSource` for source table definitions with optional aliases and descriptions.
+- `PipelineTarget` for target table definitions with controlled write modes: `append`, `overwrite`, and `merge`.
+- `TransformationRule` for declarative transformation intent using controlled rule types: `filter`, `join`, `aggregate`, `derive`, and `rename`.
+- `LoadStrategy` for controlled `full` and `incremental` load configuration.
+- `ScheduleDefinition` for configuration-only schedules: `manual`, `hourly`, `daily`, and `weekly`.
+- `PipelineRequirement` as the top-level validated pipeline specification.
+
+The model rejects unsafe identifiers, duplicate source tables, invalid enum values, inconsistent incremental load settings, unsafe SQL-like expression strings, and invalid schedule configuration. It supports clean serialization through Pydantic `model_dump()` and `model_dump_json()`.
+
+A deterministic `customer_revenue_daily` example is available from `pipeline/examples.py` and through the API. It describes sources `raw.customers` and `raw.orders`, target `curated.customer_revenue`, merge write mode, incremental loading, daily scheduling, and structured transformation rules. It does not generate SQL or execute a pipeline.
+
 ## Planned Future Capabilities
 
 - AI agent orchestration.
 - OpenAI API integration.
-- Requirement understanding for data pipeline requests.
+- Natural-language conversion into `PipelineRequirement`.
 - Pipeline planning.
 - SQL transformation generation.
 - Data-quality rule generation.
@@ -67,7 +88,7 @@ database/sql/    Ordered SQL scripts for schemas, tables, seed data, and metadat
 scripts/         Database initialization and verification scripts
 agent/           Deterministic metadata tools and future agent modules
 agent/tools/     Read-only metadata intelligence tools
-pipeline/        Placeholder for future pipeline modules
+pipeline/        Pipeline requirement models and deterministic examples
 quality/         Placeholder for future data-quality modules
 tests/           Unit tests
 docs/            Architecture documentation
@@ -169,8 +190,10 @@ Useful endpoints:
 - `GET /metadata/sample/{schema_name}/{table_name}?limit=5`
 - `GET /metadata/count/{schema_name}/{table_name}`
 - `GET /metadata/pipeline/{pipeline_name}`
+- `POST /requirements/validate`
+- `GET /requirements/example`
 
-If PostgreSQL is unavailable, `/health` returns a degraded status instead of crashing. Metadata endpoints return safe HTTP errors for unavailable databases, invalid identifiers, invalid sample limits, and unknown resources.
+If PostgreSQL is unavailable, `/health` returns a degraded status instead of crashing. Metadata endpoints return safe HTTP errors for unavailable databases, invalid identifiers, invalid sample limits, and unknown resources. Requirement endpoints validate structured JSON through Pydantic and return clear FastAPI validation errors for invalid payloads.
 
 ## Tests
 
@@ -190,9 +213,10 @@ python -m compileall app config database agent pipeline quality scripts tests
 
 - No OpenAI API integration.
 - No AI agents, prompts, or tool calling.
-- No natural-language parsing.
+- No natural-language parsing or conversion into `PipelineRequirement`.
 - No generated SQL.
 - No generated data-quality rules.
 - No pipeline execution or scheduling.
 - No CI/CD.
 - No frontend.
+

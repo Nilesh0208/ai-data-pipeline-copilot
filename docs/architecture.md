@@ -1,50 +1,68 @@
 # Architecture
 
-This document describes the current Phase 3 application. The implemented system includes FastAPI, read-only Metadata Intelligence Tools, SQLAlchemy, and the PostgreSQL sample data platform. AI agents, prompt flows, OpenAI API integration, SQL generation, pipeline execution, scheduling, and data-quality rule generation are future work and are not implemented yet.
+This document describes the current Phase 4 application. The implemented system includes FastAPI, read-only Metadata Intelligence Tools, SQLAlchemy, the PostgreSQL sample data platform, and a strict Pipeline Requirement Model for validated structured pipeline specifications. AI agents, prompt flows, OpenAI API integration, natural-language conversion, SQL generation, pipeline execution, scheduling execution, and data-quality rule generation are future work and are not implemented yet.
 
 ## Current Runtime Flow
 
 ```text
-User
+User/API
    |
    v
 FastAPI
    |
-   v
-Metadata API
+   |-- Pipeline Requirement API
+   |      |
+   |      v
+   |   Pipeline Requirement Models
+   |      |
+   |      v
+   |   Validation
    |
-   v
-Metadata Intelligence Tools
-   |
-   v
-SQLAlchemy
-   |
-   v
-PostgreSQL
-   |-- raw
-   |   |-- customers
-   |   `-- orders
-   |
-   |-- curated
-   |   `-- customer_revenue
-   |
-   `-- metadata
-       |-- table_metadata
-       |-- column_metadata
-       |-- pipeline_metadata
-       `-- pipeline_runs
+   `-- Metadata API
+          |
+          v
+       Metadata Intelligence Tools
+          |
+          v
+       SQLAlchemy
+          |
+          v
+       PostgreSQL
+          |-- raw
+          |   |-- customers
+          |   `-- orders
+          |
+          |-- curated
+          |   `-- customer_revenue
+          |
+          `-- metadata
+              |-- table_metadata
+              |-- column_metadata
+              |-- pipeline_metadata
+              `-- pipeline_runs
 ```
+
+The Pipeline Requirement API validates JSON payloads only. It does not generate SQL, execute pipelines, call an LLM, or parse natural language.
 
 ## Future Agent Flow
 
 ```text
-Future AI Agent
+Natural-language request
    |
    v
-Metadata Intelligence Tools
+AI Agent (NOT YET IMPLEMENTED)
+   |
+   v
+PipelineRequirement
+   |
+   v
+Pipeline Requirement Models
+   |
+   v
+Validation
 ```
 
-The future AI agent is NOT YET IMPLEMENTED. The Phase 3 metadata tools are deterministic Python functions that work without an LLM.
+The future AI agent is NOT YET IMPLEMENTED. The Phase 4 requirement model defines the structured contract that future agent output must satisfy.
 
 ## Components
 
@@ -65,8 +83,28 @@ The application currently exposes:
 - `GET /metadata/sample/{schema_name}/{table_name}?limit=5` for bounded sample records.
 - `GET /metadata/count/{schema_name}/{table_name}` for row counts.
 - `GET /metadata/pipeline/{pipeline_name}` for pipeline metadata.
+- `POST /requirements/validate` for validating and normalizing structured pipeline requirements.
+- `GET /requirements/example` for the deterministic `customer_revenue_daily` requirement example.
 
-The API handles database connection failures gracefully and returns safe error responses instead of exposing raw database exceptions.
+The API handles database connection failures gracefully and returns safe error responses instead of exposing raw database exceptions. Requirement validation errors are returned through FastAPI's standard validation response format.
+
+### Pipeline Requirement API
+
+The requirement API is a thin HTTP layer in `app/requirements.py`. It delegates validation to Pydantic models in `pipeline/requirements.py` and returns normalized model dumps. It has no database dependency and does not require PostgreSQL for validation tests.
+
+### Pipeline Requirement Models
+
+The requirement models define a strict, serializable contract for future AI-produced pipeline specifications:
+
+- `TableReference` validates safe schema and table identifiers.
+- `PipelineSource` defines source tables, aliases, and descriptions.
+- `PipelineTarget` defines target tables and controlled write modes.
+- `TransformationRule` captures declarative transformation intent with controlled rule types.
+- `LoadStrategy` validates full and incremental load configuration.
+- `ScheduleDefinition` validates configuration-only schedule settings.
+- `PipelineRequirement` ties sources, target, transformations, load strategy, schedule, owner, purpose, and tags together.
+
+The models reject unsafe identifiers, duplicate source tables, duplicate aliases, invalid enum values, unsafe SQL-like expression strings, inconsistent load settings, and invalid schedule settings. They support serialization through Pydantic `model_dump()` and `model_dump_json()`.
 
 ### Metadata API
 
@@ -123,7 +161,7 @@ The sample data platform creates three non-public schemas:
 
 #### Curated Schema
 
-`curated.customer_revenue` is a planned target table for future customer revenue aggregation. It exists in Phase 3 but is not populated by pipeline execution.
+`curated.customer_revenue` is a planned target table for future customer revenue aggregation. It exists in Phase 4 but is not populated by pipeline execution.
 
 #### Metadata Schema
 
@@ -133,8 +171,8 @@ The sample data platform creates three non-public schemas:
 
 `metadata.pipeline_metadata` contains one planned pipeline definition named `customer_revenue_daily` with sources `raw.customers` and `raw.orders`, target `curated.customer_revenue`, incremental load type, and daily schedule.
 
-`metadata.pipeline_runs` exists for future execution history and remains empty in Phase 3.
+`metadata.pipeline_runs` exists for future execution history and remains empty in Phase 4.
 
 ## Future Agent Layer
 
-The future agent layer is not implemented in Phase 3. Later phases may add AI orchestration that calls the deterministic metadata tools, but the current tool layer intentionally contains no prompts, model calls, natural-language parsing, SQL generation, data-quality generation, or pipeline execution.
+The future agent layer is not implemented in Phase 4. Later phases may add AI orchestration that converts natural-language requests into `PipelineRequirement` and calls deterministic metadata tools, but the current system intentionally contains no prompts, model calls, natural-language parsing, SQL generation, data-quality generation, or pipeline execution.
