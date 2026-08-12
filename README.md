@@ -4,9 +4,20 @@ AI Data Pipeline Copilot is a portfolio project that will eventually become an a
 
 ## Current Status
 
-Phase 1 is complete as a project foundation only. It includes a FastAPI service, environment-based configuration, a reusable SQLAlchemy database engine, PostgreSQL Docker Compose setup, health checks, tests, and documentation.
+Phase 2 is complete as a sample data platform. The project now includes the Phase 1 FastAPI foundation plus PostgreSQL initialization scripts for a small realistic data engineering environment.
 
-No AI-agent functionality is implemented in this phase.
+Implemented now:
+
+- FastAPI service foundation.
+- Environment-based configuration.
+- Reusable SQLAlchemy 2.x database engine with psycopg.
+- PostgreSQL Docker Compose setup.
+- Database health checks.
+- Sample PostgreSQL schemas and tables.
+- Deterministic seed data for raw source tables.
+- Metadata tables describing the sample platform and one planned pipeline definition.
+
+No AI-agent functionality is implemented yet.
 
 ## Planned Future Capabilities
 
@@ -32,15 +43,16 @@ No AI-agent functionality is implemented in this phase.
 ## Project Structure
 
 ```text
-app/          FastAPI application entry points and routes
-config/       Environment-based settings
-database/     SQLAlchemy engine and database health checks
-agent/        Placeholder for future agent modules
-pipeline/     Placeholder for future pipeline modules
-quality/      Placeholder for future data-quality modules
-tests/        Unit tests
-docs/         Architecture documentation
-scripts/      Utility scripts
+app/             FastAPI application entry points and routes
+config/          Environment-based settings
+database/        SQLAlchemy engine, health checks, and SQL initialization files
+database/sql/    Ordered SQL scripts for Phase 2 schemas, tables, seed data, and metadata
+scripts/         Database initialization and verification scripts
+agent/           Placeholder for future agent modules
+pipeline/        Placeholder for future pipeline modules
+quality/         Placeholder for future data-quality modules
+tests/           Unit tests
+docs/            Architecture documentation
 ```
 
 ## Local Setup
@@ -82,6 +94,44 @@ Check service status:
 docker compose ps
 ```
 
+## Database Initialization
+
+Initialize the Phase 2 sample data platform:
+
+```powershell
+python scripts/init_database.py
+```
+
+The initialization command uses the existing application settings and SQLAlchemy engine. It executes SQL files from `database/sql/` in filename order and is safe to rerun.
+
+Verify expected schemas, tables, and seed counts:
+
+```powershell
+python scripts/verify_database.py
+```
+
+## Sample Data Platform
+
+Business tables are not created in the `public` schema.
+
+Raw source tables:
+
+- `raw.customers`
+- `raw.orders`
+
+Curated target table:
+
+- `curated.customer_revenue`
+
+Metadata tables:
+
+- `metadata.table_metadata`
+- `metadata.column_metadata`
+- `metadata.pipeline_metadata`
+- `metadata.pipeline_runs`
+
+Seed data includes 10 customers and 35 orders with multiple countries, currencies, and order statuses. `curated.customer_revenue` is intentionally not populated by a pipeline in Phase 2.
+
 ## FastAPI Startup
 
 Run the API locally:
@@ -108,15 +158,16 @@ pytest
 Run Python syntax validation:
 
 ```powershell
-python -m compileall app config database agent pipeline quality tests
+python -m compileall app config database agent pipeline quality scripts tests
 ```
 
 ## Current Limitations
 
 - No OpenAI API integration.
 - No agents, prompts, or tool calling.
-- No SQL generation.
-- No metadata, source, business, or data-quality tables.
-- No pipeline execution.
+- No natural-language parsing.
+- No generated SQL.
+- No generated data-quality rules.
+- No pipeline execution or scheduling.
 - No CI/CD.
 - No frontend.
