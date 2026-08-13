@@ -10,6 +10,8 @@ from app.agent import router as agent_router
 
 from app.health import router as health_router
 from app.metadata import router as metadata_router
+from app.pipeline_plan import router as pipeline_plan_router
+from app.quality import router as quality_router
 from app.requirements import router as requirements_router
 from app.sql import router as sql_router
 from config.settings import get_settings
@@ -34,6 +36,8 @@ app.include_router(metadata_router)
 app.include_router(requirements_router)
 app.include_router(agent_router)
 app.include_router(sql_router)
+app.include_router(quality_router)
+app.include_router(pipeline_plan_router)
 
 
 @app.get("/")
@@ -44,7 +48,6 @@ def read_root() -> dict[str, str]:
         "application": settings.app_name,
         "environment": settings.app_env,
         "status": "running",
-        "phase": "Phase 6 - SQL Generation",
+        "phase": "Phase 8 - Pipeline Plan Generation",
     }
-
 
