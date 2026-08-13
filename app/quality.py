@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 
 from agent.client import MissingGeminiAPIKeyError
 from pipeline.requirements import PipelineRequirement
-from quality.generator import QualityGenerationError, QualityStructuredOutputError, generate_quality_plan
+from quality.generator import QualityGenerationError, QualityProviderError, QualityStructuredOutputError, generate_quality_plan
 from quality.models import GeneratedDataQualityPlan
 
 
@@ -22,5 +22,7 @@ def generate_pipeline_quality_plan(requirement: PipelineRequirement) -> Generate
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except QualityStructuredOutputError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except QualityProviderError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
     except QualityGenerationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc

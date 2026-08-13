@@ -7,7 +7,7 @@ from collections import defaultdict, deque
 
 from pipeline.requirements import PipelineRequirement
 from pipeline_plan.models import PipelinePlan, PipelinePlanStep, PipelinePlanStepType, PipelinePlanValidationStatus
-from quality.models import GeneratedDataQualityPlan
+from quality.models import GeneratedDataQualityPlan, QualityValidationStatus
 from sql_generation.models import GeneratedSQL, SQLValidationStatus
 
 
@@ -66,6 +66,8 @@ def _validate_artifact_consistency(
         errors.append("GeneratedSQL target_table does not match PipelineRequirement target")
     if generated_sql.validation_status != SQLValidationStatus.VALID:
         errors.append("GeneratedSQL must be locally valid before pipeline planning")
+    if quality_plan.validation_status == QualityValidationStatus.INVALID:
+        errors.append("GeneratedDataQualityPlan must be locally valid before pipeline planning")
 
 
 def _validate_schedule(requirement: PipelineRequirement, pipeline_plan: PipelinePlan, errors: list[str]) -> None:

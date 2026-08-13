@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title=settings.app_name,
-    description="Project foundation for AI Data Pipeline Copilot.",
+    description="Inspect-only AI Data Pipeline Copilot for metadata-aware pipeline artifact generation.",
     version="0.1.0",
 )
 
@@ -48,6 +48,6 @@ def read_root() -> dict[str, str]:
         "application": settings.app_name,
         "environment": settings.app_env,
         "status": "running",
-        "phase": "Phase 8 - Pipeline Plan Generation",
+        "phase": "Phase 9 - Final Hardening",
     }
 

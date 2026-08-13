@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 
 from agent.client import MissingGeminiAPIKeyError
 from pipeline.requirements import PipelineRequirement
-from sql_generation.generator import SQLGenerationError, SQLStructuredOutputError, generate_sql
+from sql_generation.generator import SQLGenerationError, SQLProviderError, SQLStructuredOutputError, generate_sql
 from sql_generation.models import GeneratedSQL
 
 
@@ -22,5 +22,7 @@ def generate_pipeline_sql(requirement: PipelineRequirement) -> GeneratedSQL:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except SQLStructuredOutputError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except SQLProviderError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
     except SQLGenerationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc

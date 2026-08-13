@@ -10,6 +10,7 @@ from google.genai import errors, types
 from pydantic import ValidationError
 
 from agent.client import GeminiClientProtocol, create_gemini_client
+from agent.provider_errors import log_gemini_error
 from config.settings import Settings, get_settings
 from pipeline.requirements import PipelineRequirement
 from sql_generation.models import GeneratedSQL
@@ -26,6 +27,11 @@ class SQLGenerationError(RuntimeError):
 
 class SQLProviderError(SQLGenerationError):
     """Raised when Gemini cannot generate SQL."""
+
+    def __init__(self, message: str, *, http_status: int = 503, request_id: str | None = None) -> None:
+        self.http_status = http_status
+        self.request_id = request_id
+        super().__init__(message)
 
 
 class SQLStructuredOutputError(SQLGenerationError):
@@ -49,14 +55,12 @@ def generate_sql(
             config=_build_generate_content_config(),
         )
     except (errors.ClientError, errors.ServerError, errors.APIError) as exc:
-        logger.warning(
-            "Gemini SQL generation failed: error_type=%s status_code=%s code=%s message=%s",
-            exc.__class__.__name__,
-            getattr(exc, "status_code", None),
-            getattr(exc, "code", None),
-            _safe_error_message(exc),
-        )
-        raise SQLProviderError("Gemini SQL generation failed") from exc
+        context = log_gemini_error(logger, "Gemini SQL generation", exc)
+        raise SQLProviderError(
+            context.public_message,
+            http_status=context.http_status,
+            request_id=context.request_id,
+        ) from exc
 
     generated_sql = _parse_generated_sql(response)
     return validate_generated_sql(requirement, generated_sql)
@@ -112,11 +116,6 @@ def _validate_generated_sql_model(payload: Any) -> GeneratedSQL:
         return GeneratedSQL.model_validate(payload)
     except ValidationError as exc:
         raise SQLStructuredOutputError(f"Gemini returned invalid GeneratedSQL: {exc}") from exc
-
-
-def _safe_error_message(exc: BaseException) -> str:
-    message = getattr(exc, "message", None) or str(exc)
-    return str(message)
 
 
 def _get(value: Any, name: str, default: Any = None) -> Any:

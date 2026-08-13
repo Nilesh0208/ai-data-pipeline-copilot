@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from agent.client import GeminiClientProtocol, MissingGeminiAPIKeyError, create_gemini_client
 from agent.prompts import PIPELINE_AGENT_INSTRUCTIONS, REQUIREMENT_CORRECTION_INSTRUCTIONS
+from agent.provider_errors import extract_provider_request_id, log_gemini_error
 from agent.tool_registry import ToolTraceEntry, dispatch_tool, get_gemini_tool, trace_entry
 from config.settings import Settings, get_settings
 from pipeline.requirements import PipelineRequirement
@@ -142,12 +143,12 @@ def generate_pipeline_requirement_result(
             model=active_settings.gemini_model,
         )
     except (errors.ClientError, errors.ServerError, errors.APIError) as exc:
-        _log_gemini_error(exc)
+        context = log_gemini_error(logger, "Gemini requirement generation", exc)
         return PipelineAgentResult(
             status="error",
-            message="AI agent request failed with Gemini",
+            message=context.public_message,
             model=active_settings.gemini_model,
-            request_id=_extract_error_request_id(exc),
+            request_id=context.request_id,
         )
     except Exception as exc:
         logger.warning("Gemini agent failed: error_type=%s", exc.__class__.__name__)
@@ -289,14 +290,7 @@ def _last_traceback_frame(exc: BaseException) -> traceback.FrameSummary | None:
 
 
 def _log_gemini_error(exc: errors.APIError) -> None:
-    logger.warning(
-        "Gemini API request failed: error_type=%s status_code=%s code=%s message=%s request_id=%s",
-        exc.__class__.__name__,
-        getattr(exc, "status_code", None),
-        getattr(exc, "code", None),
-        _safe_error_message(exc),
-        _extract_error_request_id(exc),
-    )
+    log_gemini_error(logger, "Gemini requirement generation", exc)
 
 
 def _safe_error_message(exc: BaseException) -> str:
@@ -305,13 +299,7 @@ def _safe_error_message(exc: BaseException) -> str:
 
 
 def _extract_error_request_id(exc: BaseException) -> str | None:
-    for attribute in ("request_id", "response_id"):
-        value = getattr(exc, attribute, None)
-        if value:
-            return str(value)
-    response = getattr(exc, "response", None)
-    headers = getattr(response, "headers", {}) or {}
-    return headers.get("x-request-id") or headers.get("x-goog-request-id")
+    return extract_provider_request_id(exc)
 
 
 def _extract_response_id(response: Any) -> str | None:

@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from agent.client import MissingGeminiAPIKeyError
 from pipeline_plan.generator import (
     PipelinePlanGenerationError,
+    PipelinePlanProviderError,
     PipelinePlanStructuredOutputError,
     generate_pipeline_plan,
 )
@@ -25,5 +26,7 @@ def generate_pipeline_plan_endpoint(request: PipelinePlanGenerationRequest) -> P
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except PipelinePlanStructuredOutputError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except PipelinePlanProviderError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
     except PipelinePlanGenerationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc

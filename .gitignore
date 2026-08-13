@@ -10,6 +10,7 @@ venv/
 env/
 
 .pytest_cache/
+pytest-of-*/
 .coverage
 htmlcov/
 

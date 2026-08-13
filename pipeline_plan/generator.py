@@ -10,6 +10,7 @@ from google.genai import errors, types
 from pydantic import ValidationError
 
 from agent.client import GeminiClientProtocol, create_gemini_client
+from agent.provider_errors import log_gemini_error
 from config.settings import Settings, get_settings
 from pipeline.requirements import PipelineRequirement
 from pipeline_plan.models import PipelinePlan
@@ -28,6 +29,11 @@ class PipelinePlanGenerationError(RuntimeError):
 
 class PipelinePlanProviderError(PipelinePlanGenerationError):
     """Raised when Gemini cannot generate a pipeline plan."""
+
+    def __init__(self, message: str, *, http_status: int = 503, request_id: str | None = None) -> None:
+        self.http_status = http_status
+        self.request_id = request_id
+        super().__init__(message)
 
 
 class PipelinePlanStructuredOutputError(PipelinePlanGenerationError):
@@ -58,14 +64,12 @@ def generate_pipeline_plan(
             config=_build_generate_content_config(),
         )
     except (errors.ClientError, errors.ServerError, errors.APIError) as exc:
-        logger.warning(
-            "Gemini pipeline-plan generation failed: error_type=%s status_code=%s code=%s message=%s",
-            exc.__class__.__name__,
-            getattr(exc, "status_code", None),
-            getattr(exc, "code", None),
-            _safe_error_message(exc),
-        )
-        raise PipelinePlanProviderError("Gemini pipeline-plan generation failed") from exc
+        context = log_gemini_error(logger, "Gemini pipeline-plan generation", exc)
+        raise PipelinePlanProviderError(
+            context.public_message,
+            http_status=context.http_status,
+            request_id=context.request_id,
+        ) from exc
 
     generated_plan = _parse_pipeline_plan(response)
     return validate_pipeline_plan(requirement, generated_sql, quality_plan, generated_plan)
@@ -127,11 +131,6 @@ def _validate_pipeline_plan_model(payload: Any) -> PipelinePlan:
         return PipelinePlan.model_validate(payload)
     except ValidationError as exc:
         raise PipelinePlanStructuredOutputError(f"Gemini returned invalid PipelinePlan: {exc}") from exc
-
-
-def _safe_error_message(exc: BaseException) -> str:
-    message = getattr(exc, "message", None) or str(exc)
-    return str(message)
 
 
 def _get(value: Any, name: str, default: Any = None) -> Any:

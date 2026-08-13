@@ -1,130 +1,104 @@
 # AI Data Pipeline Copilot
 
-AI Data Pipeline Copilot is a portfolio project for an agentic AI system that understands data pipeline requirements, inspects metadata, and produces validated pipeline specifications.
-
-## Current Status
-
-Phase 5 is complete. The project now includes the FastAPI/PostgreSQL foundation, deterministic Metadata Intelligence Tools, a strict Pipeline Requirement Model, and a Google Gemini based AI agent core that converts natural-language requests into validated `PipelineRequirement` objects.
-
-Implemented now:
-
-- FastAPI service foundation.
-- Environment-based configuration.
-- Reusable SQLAlchemy 2.x database engine with psycopg.
-- PostgreSQL Docker Compose setup.
-- Database health checks.
-- Sample PostgreSQL schemas and deterministic seed data.
-- Metadata tables describing sample business tables and one planned pipeline.
-- Read-only Python metadata tools for table discovery, schema inspection, metadata lookup, samples, row counts, and pipeline metadata.
-- Thin read-only FastAPI metadata endpoints.
-- Strict Pydantic models for structured pipeline requirements.
-- Requirement validation endpoints.
-- Google Gemini API integration.
-- Google Gen AI Python SDK integration.
-- Gemini function-calling agent loop.
-- Gemini structured JSON output validated into `PipelineRequirement`.
-- `POST /agent/requirements` natural-language requirement endpoint.
-
-## AI Agent Core
-
-The agent lives in `agent/` and uses the official Google Gen AI Python SDK directly. It does not use LangChain, CrewAI, AutoGen, or another agent framework.
-
-Current workflow:
+AI Data Pipeline Copilot is a portfolio FastAPI project that uses Google Gemini plus deterministic local validators to produce inspect-only data pipeline artifacts:
 
 ```text
 Natural-language request
-   |
-   v
-Gemini AI Pipeline Agent
-   |
-   v
-Gemini function calling
-   |
-   v
-Metadata Intelligence Tools
-   |
-   v
-PostgreSQL
-   |
-   v
-Validated PipelineRequirement
+  -> PipelineRequirement
+  -> GeneratedSQL
+  -> GeneratedDataQualityPlan
+  -> PipelinePlan
 ```
 
-The agent can call only registered read-only metadata tools. Tool calls are dispatched through a deterministic registry that validates arguments, rejects unknown tool names, serializes results safely, and records a lightweight trace of tool name, sanitized arguments, and success/failure. The final model output is requested as Gemini structured JSON using the `PipelineRequirement` schema and is validated again with the existing Pydantic model.
+The project demonstrates how an AI-assisted data platform can use strict contracts, read-only metadata tools, and local semantic validation to keep generated artifacts reviewable and safe.
 
-Current AI limitations:
+## Problem Statement
 
-- No SQL generation yet.
-- No SQL execution.
-- No pipeline execution.
-- No data-quality rule generation yet.
-- No remediation, orchestration, Airflow, or scheduling execution.
+Data pipeline design often requires translating business intent into consistent requirements, SQL, quality checks, and execution plans. This project automates artifact drafting while preserving an explicit safety boundary: AI-generated SQL, quality rules, and pipeline plans are never automatically executed.
 
-## Metadata Intelligence Tools
+## Major Features
 
-The metadata tool layer lives in `agent/tools/metadata_tools.py`. These functions are deterministic, read-only, and available to the Gemini agent through `agent/tool_registry.py`:
-
-- `list_tables()` returns business tables from `raw` and `curated`.
-- `inspect_schema(schema_name, table_name)` returns physical column names, data types, nullability, primary-key flags, and ordinal positions.
-- `get_table_metadata(schema_name, table_name)` reads table descriptions from `metadata.table_metadata`.
-- `get_column_metadata(schema_name, table_name)` reads column descriptions from `metadata.column_metadata`.
-- `get_sample_records(schema_name, table_name, limit=5)` returns validated sample records. Direct tool usage supports up to 20; agent usage is capped at 10.
-- `get_row_count(schema_name, table_name)` returns a table row count.
-- `get_pipeline_metadata(pipeline_name)` reads pipeline definitions from `metadata.pipeline_metadata`.
-
-The tools do not accept arbitrary SQL and do not perform writes.
-
-## Pipeline Requirement Model
-
-The pipeline requirement model lives in `pipeline/requirements.py`. It defines the structured contract produced by the AI agent.
-
-Implemented models include:
-
-- `TableReference` for safe schema and table identifiers.
-- `PipelineSource` for source table definitions with optional aliases and descriptions.
-- `PipelineTarget` for target table definitions with controlled write modes: `append`, `overwrite`, and `merge`.
-- `TransformationRule` for declarative transformation intent using controlled rule types: `filter`, `join`, `aggregate`, `derive`, and `rename`.
-- `LoadStrategy` for controlled `full` and `incremental` load configuration.
-- `ScheduleDefinition` for configuration-only schedules: `manual`, `hourly`, `daily`, and `weekly`.
-- `PipelineRequirement` as the top-level validated pipeline specification.
-
-The model rejects unsafe identifiers, duplicate source tables, invalid enum values, inconsistent incremental load settings, unsafe SQL-like expression strings, and invalid schedule configuration.
+- FastAPI application with health, metadata, requirement, SQL, quality, and pipeline-plan endpoints.
+- PostgreSQL sample data platform with `raw`, `curated`, and `metadata` schemas.
+- Read-only metadata intelligence tools exposed to Gemini through controlled function calling.
+- Strict `PipelineRequirement` model with safe identifiers, declarative transformations, load strategy, and schedule validation.
+- Gemini-backed requirement agent with one semantic correction attempt for invalid structured output.
+- Guarded PostgreSQL SQL generation with deterministic validation.
+- Incremental SQL guardrail requiring `:last_successful_watermark`.
+- Structured data-quality plan generation with deterministic normalization for safe derivations.
+- Structured pipeline-plan generation with dependency, cycle, schedule, and artifact-consistency validation.
+- Mocked test suite covering provider paths, safety boundaries, and cross-phase consistency.
 
 ## Technology Stack
 
 - Python 3.11+
 - FastAPI
 - PostgreSQL
-- SQLAlchemy 2.x
-- Pydantic and pydantic-settings
-- psycopg
-- Google Gemini API
+- SQLAlchemy 2.x and psycopg
+- Pydantic 2 and pydantic-settings
 - Google Gen AI Python SDK
-- Gemini function calling
-- Gemini structured outputs
-- Agent orchestration
-- Pydantic validated agent output
 - pytest
 - Docker Compose
-- Python logging
 
-## Project Structure
+## Safety Model
 
-```text
-app/             FastAPI application entry points and routes
-config/          Environment-based settings
-database/        SQLAlchemy engine, health checks, and SQL initialization files
-database/sql/    Ordered SQL scripts for schemas, tables, seed data, and metadata
-scripts/         Database initialization and verification scripts
-agent/           AI agent core, Gemini client, prompts, registry, and tools
-agent/tools/     Read-only metadata intelligence tools
-pipeline/        Pipeline requirement models and deterministic examples
-quality/         Placeholder for future data-quality modules
-tests/           Unit tests
-docs/            Architecture documentation
+The system is inspect-only.
+
+- Generated SQL is returned for review and is not executed.
+- Generated quality rules are returned for review and are not executed.
+- Generated pipeline plans are implementation blueprints and are not orchestrated.
+- Metadata tools are read-only and do not accept arbitrary SQL.
+- Gemini has no tool for SQL execution, database writes, shell execution, Python execution, remediation, or infrastructure provisioning.
+- Local deterministic validators are authoritative; Gemini-declared `validation_status`, warnings, and errors are treated as untrusted.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    User[User or API Client] --> FastAPI[FastAPI]
+    FastAPI --> MetadataAPI[Metadata API]
+    MetadataAPI --> MetadataTools[Read-only Metadata Tools]
+    MetadataTools --> PostgreSQL[(PostgreSQL sample platform)]
+
+    FastAPI --> Agent[Requirement Agent]
+    Agent --> Gemini[Gemini API]
+    Gemini --> ToolRegistry[Controlled Function Tool Registry]
+    ToolRegistry --> MetadataTools
+    Agent --> Requirement[Validated PipelineRequirement]
+
+    FastAPI --> SQLGen[SQL Generation]
+    SQLGen --> Gemini
+    SQLGen --> SQLValidator[Deterministic SQL Validator]
+
+    FastAPI --> QualityGen[Quality Generation]
+    QualityGen --> Gemini
+    QualityGen --> QualityNormalizer[Deterministic Quality Normalizer]
+    QualityNormalizer --> QualityValidator[Deterministic Quality Validator]
+
+    FastAPI --> PlanGen[Pipeline Plan Generation]
+    PlanGen --> Gemini
+    PlanGen --> PlanValidator[Deterministic Plan Validator]
 ```
 
-## Local Setup
+## API Summary
+
+- `GET /` - application information.
+- `GET /health` - application and database health summary.
+- `GET /metadata/tables` - list available business tables.
+- `GET /metadata/schema/{schema_name}/{table_name}` - inspect physical schema.
+- `GET /metadata/table/{schema_name}/{table_name}` - table metadata.
+- `GET /metadata/columns/{schema_name}/{table_name}` - column metadata.
+- `GET /metadata/sample/{schema_name}/{table_name}?limit=5` - bounded sample rows.
+- `GET /metadata/count/{schema_name}/{table_name}` - table row count.
+- `GET /metadata/pipeline/{pipeline_name}` - stored pipeline metadata.
+- `POST /requirements/validate` - validate a structured `PipelineRequirement`.
+- `GET /requirements/example` - deterministic `customer_revenue_daily` example.
+- `POST /agent/requirements` - generate a requirement from natural language.
+- `POST /sql/generate` - generate inspectable PostgreSQL SQL.
+- `POST /quality/generate` - generate inspectable data-quality rules.
+- `POST /pipeline-plan/generate` - generate an inspectable pipeline plan from prior artifacts.
+
+## Setup
 
 Create and activate a virtual environment:
 
@@ -139,15 +113,26 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-Create local configuration from the example when needed:
+Create local configuration when needed:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Update `POSTGRES_PASSWORD` for local use. Add `GEMINI_API_KEY` only when you want to run the live AI endpoint. Do not commit real secrets. `GEMINI_MODEL` is optional and defaults to `gemini-3.6-flash`.
+Set `GEMINI_API_KEY` only when running live Gemini-backed endpoints. Do not commit `.env`.
 
-## PostgreSQL Startup
+## Environment Configuration
+
+`.env.example` documents supported settings:
+
+- `APP_NAME`, `APP_ENV`, `APP_HOST`, `APP_PORT`, `LOG_LEVEL`
+- `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
+- `GEMINI_API_KEY`
+- `GEMINI_MODEL`
+
+`GEMINI_MODEL` defaults to `gemini-3.6-flash`.
+
+## Running PostgreSQL
 
 Start PostgreSQL:
 
@@ -155,74 +140,112 @@ Start PostgreSQL:
 docker compose up -d postgres
 ```
 
-PostgreSQL is exposed on host port `5434`.
-
-Initialize the sample data platform:
+Initialize sample schemas, tables, data, and metadata:
 
 ```powershell
 python scripts/init_database.py
 ```
 
-Verify expected schemas, tables, and seed counts:
+Verify the database:
 
 ```powershell
 python scripts/verify_database.py
 ```
 
-## FastAPI Startup
-
-Run the API locally:
+## Starting FastAPI
 
 ```powershell
 uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-Useful endpoints:
+Open interactive docs at `http://127.0.0.1:8000/docs`.
 
-- `GET /`
-- `GET /health`
-- `GET /metadata/tables`
-- `GET /metadata/schema/{schema_name}/{table_name}`
-- `GET /metadata/table/{schema_name}/{table_name}`
-- `GET /metadata/columns/{schema_name}/{table_name}`
-- `GET /metadata/sample/{schema_name}/{table_name}?limit=5`
-- `GET /metadata/count/{schema_name}/{table_name}`
-- `GET /metadata/pipeline/{pipeline_name}`
-- `POST /requirements/validate`
-- `GET /requirements/example`
-- `POST /agent/requirements`
+## Example API Flow
 
-Example agent request after setting `GEMINI_API_KEY`:
+Generate a requirement:
 
 ```powershell
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/agent/requirements -ContentType 'application/json' -Body '{"request":"Create a daily pipeline that joins customers and completed orders and calculates total revenue per customer."}'
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/agent/requirements -ContentType 'application/json' -Body '{
+  "request": "Create a daily pipeline that joins customers and completed orders and calculates total revenue per customer."
+}'
 ```
 
-If `GEMINI_API_KEY` is missing, the agent endpoint returns a controlled error response instead of crashing.
+Generate SQL from a requirement:
 
-## Tests
+```json
+{
+  "pipeline_name": "customer_revenue_daily",
+  "sources": [
+    {"table": {"schema_name": "raw", "table_name": "customers"}, "alias": "c"},
+    {"table": {"schema_name": "raw", "table_name": "orders"}, "alias": "o"}
+  ],
+  "target": {"table": {"schema_name": "curated", "table_name": "customer_revenue"}, "write_mode": "merge"},
+  "transformations": [
+    {"rule_type": "join", "description": "Join customers and orders by customer_id.", "input_columns": ["c.customer_id", "o.customer_id"], "expression": {"left_column": "c.customer_id", "right_column": "o.customer_id", "join_type": "inner"}},
+    {"rule_type": "filter", "description": "Keep completed orders.", "input_columns": ["o.status"], "expression": {"column": "o.status", "operator": "equals", "value": "completed"}}
+  ],
+  "load_strategy": {"load_type": "incremental", "watermark_column": "last_order_date", "deduplication_keys": ["customer_id"]},
+  "schedule": {"frequency": "daily", "timezone": "UTC", "enabled": true}
+}
+```
 
-Run the test suite:
+The `/sql/generate` response is a `GeneratedSQL` artifact containing `sql`, `source_tables`, `target_table`, `statement_type`, local `validation_status`, warnings, and validation errors.
+
+Generate quality rules by posting the same `PipelineRequirement` JSON to `/quality/generate`. The response is a `GeneratedDataQualityPlan` with structured rules and local validation status.
+
+Generate a pipeline plan:
+
+```json
+{
+  "requirement": { "...": "PipelineRequirement JSON" },
+  "generated_sql": { "...": "GeneratedSQL JSON from /sql/generate" },
+  "quality_plan": { "...": "GeneratedDataQualityPlan JSON from /quality/generate" }
+}
+```
+
+The `/pipeline-plan/generate` response is an inspect-only `PipelinePlan` with ordered steps, dependencies, referenced quality checks, observability expectations, warnings, and validation errors.
+
+## Error Handling
+
+- FastAPI/Pydantic request validation returns `422`.
+- Missing Gemini configuration returns `400` on generation endpoints.
+- Malformed provider output returns `502`.
+- Gemini quota/rate-limit failures map to `429` when reliably identifiable.
+- Temporary Gemini failures map to `503`.
+- Unexpected internal failures use FastAPI's default `500` handling.
+
+The requirement-agent endpoint returns a structured `PipelineAgentResult` with `status="error"` for known agent failures to preserve its agent response contract.
+
+## Testing
+
+Run all tests:
 
 ```powershell
 pytest
 ```
 
-Run Python syntax validation:
+Compile validation:
 
 ```powershell
-python -m compileall app config database agent pipeline quality scripts tests
+python -m compileall app agent config database pipeline pipeline_plan quality sql_generation tests
 ```
 
-The unit tests mock the Gemini client and do not make billable Gemini API calls.
+The test suite mocks Gemini clients and does not make live network or billable provider calls.
 
-## Current Limitations
+## Project Limitations
 
-- No generated SQL.
-- No SQL execution.
-- No data writes.
-- No generated data-quality rules.
-- No pipeline execution or scheduling execution.
-- No Airflow or orchestration engine.
-- No CI/CD.
-- No frontend.
+- Generated SQL is not executed.
+- Quality rules are not executed.
+- Pipeline plans are not orchestrated.
+- Runtime watermark values must be supplied by a future execution/orchestration layer using `:last_successful_watermark`.
+- Gemini availability and quota can affect live generation endpoints.
+- Metadata-aware validation is limited to the metadata available in this sample project.
+- The project does not include a frontend, CI/CD, Airflow, dbt, cloud provisioning, authentication, or authorization.
+
+## Future Enhancements
+
+- Authenticated API access.
+- CI pipeline with linting and coverage reporting.
+- Optional executor/orchestrator layer that consumes reviewed artifacts.
+- Richer metadata catalog integration.
+- UI for reviewing generated artifacts and validation findings.

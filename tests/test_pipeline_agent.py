@@ -287,7 +287,7 @@ def test_api_missing_gemini_key_returns_controlled_error(monkeypatch) -> None:
 
 def test_api_controlled_gemini_provider_failure(monkeypatch) -> None:
     def fake_generate(user_request: str) -> pipeline_agent.PipelineAgentResult:
-        return pipeline_agent.PipelineAgentResult(status="error", message="AI agent request failed with Gemini")
+        return pipeline_agent.PipelineAgentResult(status="error", message="Gemini requirement generation failed with Gemini")
 
     monkeypatch.setattr("app.agent.generate_pipeline_requirement_result", fake_generate)
     client = TestClient(app)
@@ -306,9 +306,10 @@ def test_gemini_provider_error_logged_without_public_details(caplog) -> None:
         result = generate_pipeline_requirement_result("Create customer revenue", client=client, settings=settings())
 
     assert result.status == "error"
-    assert result.message == "AI agent request failed with Gemini"
+    assert result.message == "Gemini requirement generation failed with Gemini"
     assert "Invalid Gemini function schema" not in result.message
-    assert "Gemini API request failed" in caplog.text
+    assert "Gemini requirement generation failed" in caplog.text
+    assert "provider=gemini" in caplog.text
 
 
 def test_no_legacy_provider_dependency_import_required() -> None:
