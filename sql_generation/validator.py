@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from pipeline.requirements import PipelineRequirement, WriteMode
+from pipeline.requirements import LoadType, PipelineRequirement, WriteMode
 from sql_generation.models import GeneratedSQL, SQLDialect, SQLStatementType, SQLValidationStatus
 
 
@@ -19,6 +19,7 @@ PROHIBITED_PATTERNS = (
     re.compile(r"\balter\s+(database|schema|user|role)\b", re.IGNORECASE),
 )
 QUALIFIED_TABLE_PATTERN = re.compile(r"\b(raw|curated)\.([a-z_][a-z0-9_]*)\b", re.IGNORECASE)
+RUNTIME_WATERMARK_PLACEHOLDER = ":last_successful_watermark"
 
 
 def validate_generated_sql(requirement: PipelineRequirement, generated_sql: GeneratedSQL) -> GeneratedSQL:
@@ -74,6 +75,20 @@ def validate_generated_sql(requirement: PipelineRequirement, generated_sql: Gene
     if requirement.target.write_mode == WriteMode.OVERWRITE:
         warnings.append("Overwrite write mode is inspect-only in Phase 6; destructive replacement SQL is prohibited")
 
+    if requirement.load_strategy.load_type == LoadType.INCREMENTAL:
+        incremental_columns = _incremental_boundary_columns(requirement)
+        if not _references_any_column(normalized_sql, incremental_columns):
+            errors.append(
+                "incremental load SQL does not reference configured incremental_column or watermark_column"
+            )
+        if RUNTIME_WATERMARK_PLACEHOLDER not in normalized_sql:
+            errors.append(
+                f"incremental load SQL must use runtime watermark placeholder {RUNTIME_WATERMARK_PLACEHOLDER}"
+            )
+        fabricated_literal = _fabricated_watermark_literal(normalized_sql, incremental_columns)
+        if fabricated_literal is not None:
+            errors.append(f"incremental load SQL uses a fabricated literal watermark boundary: {fabricated_literal}")
+
     status = SQLValidationStatus.INVALID if errors else SQLValidationStatus.VALID
     return generated_sql.model_copy(
         update={
@@ -114,6 +129,41 @@ def _infer_statement_type(sql: str) -> SQLStatementType | None:
 def _first_keyword(sql: str) -> str | None:
     match = re.search(r"\b[a-z]+\b", sql, re.IGNORECASE)
     return match.group(0).lower() if match else None
+
+
+def _incremental_boundary_columns(requirement: PipelineRequirement) -> list[str]:
+    columns = [
+        requirement.load_strategy.incremental_column,
+        requirement.load_strategy.watermark_column,
+    ]
+    return [column for column in columns if column is not None]
+
+
+def _references_any_column(sql: str, columns: list[str]) -> bool:
+    return any(_references_column(sql, column) for column in columns)
+
+
+def _references_column(sql: str, column: str) -> bool:
+    column_pattern = re.compile(
+        rf"(?<![a-z0-9_])(?:[a-z_][a-z0-9_]*\.)?{re.escape(column)}(?![a-z0-9_])",
+        re.IGNORECASE,
+    )
+    return bool(column_pattern.search(sql))
+
+
+def _fabricated_watermark_literal(sql: str, columns: list[str]) -> str | None:
+    for column in columns:
+        column_reference = rf"(?<![a-z0-9_])(?:[a-z_][a-z0-9_]*\.)?{re.escape(column)}(?![a-z0-9_])"
+        literal = r"(?:'\d{4}-\d{2}-\d{2}(?:[^']*)?'|\b\d{4,}\b)"
+        comparisons = (
+            re.compile(rf"{column_reference}\s*(?:>=|>|=|between)\s*({literal})", re.IGNORECASE),
+            re.compile(rf"({literal})\s*(?:<=|<|=)\s*{column_reference}", re.IGNORECASE),
+        )
+        for pattern in comparisons:
+            match = pattern.search(sql)
+            if match is not None:
+                return match.group(1)
+    return None
 
 
 def _deduplicate(values: list[str]) -> list[str]:

@@ -11,6 +11,15 @@ from google.genai import errors, types
 
 from app.main import app
 from pipeline.examples import customer_revenue_daily_requirement
+from pipeline.requirements import (
+    LoadStrategy,
+    PipelineRequirement,
+    PipelineSource,
+    PipelineTarget,
+    ScheduleDefinition,
+    TableReference,
+    TransformationRule,
+)
 from sql_generation.generator import SQLStructuredOutputError, generate_sql
 from sql_generation.models import GeneratedSQL, SQLValidationStatus
 from sql_generation.validator import validate_generated_sql
@@ -49,6 +58,7 @@ USING (
     JOIN raw.orders AS o ON c.customer_id = o.customer_id
     WHERE o.status = 'COMPLETED'
     GROUP BY c.customer_id, c.customer_name
+    HAVING MAX(o.order_date) > :last_successful_watermark
 ) AS source
 ON target.customer_id = source.customer_id
 WHEN MATCHED THEN UPDATE SET
@@ -76,6 +86,51 @@ WHEN NOT MATCHED THEN INSERT (
 
 def fake_response(payload: dict[str, object]) -> object:
     return SimpleNamespace(text=json.dumps(payload), parsed=None)
+
+
+def incremental_updated_at_requirement() -> PipelineRequirement:
+    return PipelineRequirement(
+        pipeline_name="customer_snapshot_incremental",
+        sources=[
+            PipelineSource(
+                table=TableReference(schema_name="raw", table_name="customers"),
+                alias="c",
+            )
+        ],
+        target=PipelineTarget(
+            table=TableReference(schema_name="curated", table_name="customer_snapshot"),
+            write_mode="merge",
+        ),
+        transformations=[
+            TransformationRule(
+                rule_type="derive",
+                description="Carry updated_at into the curated customer snapshot.",
+                input_columns=["c.updated_at"],
+                output_column="updated_at",
+                expression={"column": "c.updated_at"},
+            )
+        ],
+        load_strategy=LoadStrategy(
+            load_type="incremental",
+            incremental_column="updated_at",
+            deduplication_keys=["customer_id"],
+        ),
+        schedule=ScheduleDefinition(frequency="daily", timezone="UTC", enabled=True),
+    )
+
+
+def incremental_updated_at_payload(sql: str) -> dict[str, object]:
+    return {
+        "pipeline_name": "customer_snapshot_incremental",
+        "dialect": "postgresql",
+        "sql": sql.strip(),
+        "source_tables": ["raw.customers"],
+        "target_table": "curated.customer_snapshot",
+        "statement_type": "merge",
+        "validation_status": "valid",
+        "warnings": [],
+        "validation_errors": [],
+    }
 
 
 def test_valid_sql_generation_from_requirement() -> None:
@@ -213,3 +268,133 @@ def test_sql_generation_does_not_execute_sql(monkeypatch) -> None:
     result = generate_sql(customer_revenue_daily_requirement(), client=FakeClient([fake_response(valid_sql_payload())]))
 
     assert result.validation_status == "valid"
+
+
+def test_incremental_sql_ignoring_incremental_column_is_not_silently_valid() -> None:
+    requirement = incremental_updated_at_requirement()
+    payload = incremental_updated_at_payload(
+        """
+MERGE INTO curated.customer_snapshot AS target
+USING (
+    SELECT c.customer_id, c.customer_name
+    FROM raw.customers AS c
+) AS source
+ON target.customer_id = source.customer_id
+WHEN MATCHED THEN UPDATE SET
+    customer_name = source.customer_name
+WHEN NOT MATCHED THEN INSERT (customer_id, customer_name)
+VALUES (source.customer_id, source.customer_name);
+"""
+    )
+
+    result = generate_sql(requirement, client=FakeClient([fake_response(payload)]))
+
+    assert result.validation_status == "invalid"
+    assert any("incremental_column or watermark_column" in error for error in result.validation_errors)
+    assert any(":last_successful_watermark" in error for error in result.validation_errors)
+
+
+def test_valid_supported_incremental_watermark_placeholder() -> None:
+    requirement = incremental_updated_at_requirement()
+    payload = incremental_updated_at_payload(
+        """
+MERGE INTO curated.customer_snapshot AS target
+USING (
+    SELECT c.customer_id, c.customer_name, c.updated_at
+    FROM raw.customers AS c
+    WHERE c.updated_at > :last_successful_watermark
+) AS source
+ON target.customer_id = source.customer_id
+WHEN MATCHED THEN UPDATE SET
+    customer_name = source.customer_name,
+    updated_at = source.updated_at
+WHEN NOT MATCHED THEN INSERT (customer_id, customer_name, updated_at)
+VALUES (source.customer_id, source.customer_name, source.updated_at);
+"""
+    )
+
+    result = generate_sql(requirement, client=FakeClient([fake_response(payload)]))
+
+    assert result.validation_status == "valid"
+    assert result.warnings == []
+
+
+def test_incremental_sql_rejects_fabricated_literal_watermark() -> None:
+    requirement = incremental_updated_at_requirement()
+    payload = incremental_updated_at_payload(
+        """
+MERGE INTO curated.customer_snapshot AS target
+USING (
+    SELECT c.customer_id, c.customer_name, c.updated_at
+    FROM raw.customers AS c
+    WHERE c.updated_at > '2026-01-01 00:00:00'
+) AS source
+ON target.customer_id = source.customer_id
+WHEN MATCHED THEN UPDATE SET
+    customer_name = source.customer_name,
+    updated_at = source.updated_at
+WHEN NOT MATCHED THEN INSERT (customer_id, customer_name, updated_at)
+VALUES (source.customer_id, source.customer_name, source.updated_at);
+"""
+    )
+
+    result = generate_sql(requirement, client=FakeClient([fake_response(payload)]))
+
+    assert result.validation_status == "invalid"
+    assert any("fabricated literal watermark" in error for error in result.validation_errors)
+    assert any(":last_successful_watermark" in error for error in result.validation_errors)
+
+
+def test_full_load_sql_does_not_require_incremental_placeholder() -> None:
+    requirement = PipelineRequirement(
+        pipeline_name="customer_snapshot_full",
+        sources=[
+            PipelineSource(
+                table=TableReference(schema_name="raw", table_name="customers"),
+                alias="c",
+            )
+        ],
+        target=PipelineTarget(
+            table=TableReference(schema_name="curated", table_name="customer_snapshot"),
+            write_mode="append",
+        ),
+        transformations=[
+            TransformationRule(
+                rule_type="derive",
+                description="Carry customer name into the curated customer snapshot.",
+                input_columns=["c.customer_name"],
+                output_column="customer_name",
+                expression={"column": "c.customer_name"},
+            )
+        ],
+        load_strategy=LoadStrategy(load_type="full"),
+        schedule=ScheduleDefinition(frequency="daily", timezone="UTC", enabled=True),
+    )
+    payload = {
+        "pipeline_name": "customer_snapshot_full",
+        "dialect": "postgresql",
+        "sql": """
+INSERT INTO curated.customer_snapshot (customer_id, customer_name)
+SELECT c.customer_id, c.customer_name
+FROM raw.customers AS c;
+""".strip(),
+        "source_tables": ["raw.customers"],
+        "target_table": "curated.customer_snapshot",
+        "statement_type": "insert",
+        "validation_status": "valid",
+        "warnings": [],
+        "validation_errors": [],
+    }
+
+    result = generate_sql(requirement, client=FakeClient([fake_response(payload)]))
+
+    assert result.validation_status == "valid"
+    assert result.validation_errors == []
+
+
+def test_existing_merge_behavior_remains_valid_with_incremental_boundary() -> None:
+    result = generate_sql(customer_revenue_daily_requirement(), client=FakeClient([fake_response(valid_sql_payload())]))
+
+    assert result.validation_status == "valid"
+    assert result.statement_type == "merge"
+    assert result.validation_errors == []
