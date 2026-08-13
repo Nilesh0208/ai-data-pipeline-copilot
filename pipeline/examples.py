@@ -44,8 +44,8 @@ def customer_revenue_daily_requirement() -> PipelineRequirement:
             TransformationRule(
                 rule_type="filter",
                 description="Keep completed orders.",
-                input_columns=["o.order_status"],
-                expression={"column": "o.order_status", "operator": "equals", "value": "completed"},
+                input_columns=["o.status"],
+                expression={"column": "o.status", "operator": "equals", "value": "completed"},
             ),
             TransformationRule(
                 rule_type="aggregate",

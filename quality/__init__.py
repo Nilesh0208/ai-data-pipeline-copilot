@@ -1,1 +1,1 @@
-"""Placeholder package for future data-quality capabilities."""
+"""Data-quality rule generation package."""
