@@ -249,3 +249,19 @@ The test suite mocks Gemini clients and does not make live network or billable p
 - Optional executor/orchestrator layer that consumes reviewed artifacts.
 - Richer metadata catalog integration.
 - UI for reviewing generated artifacts and validation findings.
+
+Some Screenshots of Successful Phases Run:
+<img width="1905" height="495" alt="Screenshot 2026-08-12 145446" src="https://github.com/user-attachments/assets/2d34f21b-7c5d-47fe-b0de-36877fb0c4fc" />
+
+<img width="1467" height="756" alt="phase6test" src="https://github.com/user-attachments/assets/770746f3-729a-42e6-bd95-0cc01602a25b" />
+
+<img width="1477" height="750" alt="phase7test" src="https://github.com/user-attachments/assets/a2310667-e238-4717-b705-9542b06dd85b" />
+
+<img width="1480" height="767" alt="phase8test" src="https://github.com/user-attachments/assets/6fbc5eca-1a33-49f0-81de-8306bb689a54" />
+
+<img width="1471" height="750" alt="Finaloutput" src="https://github.com/user-attachments/assets/02e05f5c-1ae6-40c3-b505-e629ff54f87e" />
+
+
+
+
+
